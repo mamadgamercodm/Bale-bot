@@ -16,9 +16,9 @@ app = Flask(__name__)
 # فرمت: "نام بازی": jdatetime.datetime(سال, ماه, روز, ساعت, دقیقه)
 MATCHES = {
     "استراليا vs آمريکا": jdatetime.datetime(1405, 3, 29, 22, 30),
-    "مراکش vs اسکاتلند": jdatetime.datetime(1403, 3, 30, 1, 30),
-    "هاييتي vs برزيل": jdatetime.datetime(1403, 3, 30, 4, 0),
-    "پاراگوئه vs ترکيه": jdatetime.datetime(1403, 3, 30, 6, 30)
+    "مراکش vs اسکاتلند": jdatetime.datetime(1405, 3, 30, 1, 30),
+    "هاييتي vs برزيل": jdatetime.datetime(1405, 3, 30, 4, 0),
+    "پاراگوئه vs ترکيه": jdatetime.datetime(1405, 3, 30, 6, 30)
 }
 
 GAME_BALLS = {
