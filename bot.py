@@ -13,7 +13,7 @@ TITLE = "WORLDCUP PREDICTION 69"
 
 app = Flask(__name__)
 
-# --- لیست مسابقات به همراه زمان قفل ---
+# --- لیست مسابقات ---
 MATCHES = {
     "استراليا vs آمريکا": jdatetime.datetime(1405, 3, 29, 22, 30),
     "مراکش vs اسکاتلند": jdatetime.datetime(1405, 3, 30, 1, 30),
@@ -31,7 +31,7 @@ GAME_BALLS = {
 # --- توابع کمکی ---
 def normalize_str(text):
     text = text.replace('ي', 'ی').replace('ك', 'ک')
-    text = text.replace("‌", "")  # حذف نیم‌فاصله
+    text = text.replace("‌", "")
     return "".join(text.split()).lower()
 
 def extract_teams(match_text):
@@ -45,8 +45,7 @@ def extract_teams(match_text):
 def match_any_order(user_text, match_key):
     user_norm = normalize_str(user_text)
     teams = extract_teams(match_key)
-    if not teams:
-        return False
+    if not teams: return False
     team1, team2 = teams
     return team1 in user_norm and team2 in user_norm
 
@@ -55,8 +54,7 @@ def load_data():
         try:
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            return {}
+        except: return {}
     return {}
 
 def save_data(data):
@@ -64,12 +62,7 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=4)
 
 def send_message(chat_id, text):
-    url = API_URL + "sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text
-    }
-    requests.post(url, json=payload)
+    requests.post(API_URL + "sendMessage", json={"chat_id": chat_id, "text": text})
 
 def format_summary(data):
     summary = f"📋 {TITLE}\n\n"
@@ -82,8 +75,7 @@ def format_summary(data):
         else:
             for p in preds:
                 user_label = p.get("username") or p.get("first_name") or f"User {p.get('user_id', '')}"
-                prediction = p.get("prediction", "")
-                summary += f"   └ 👤 {user_label}: {prediction}\n"
+                summary += f"   └ 👤 {user_label}: {p.get('prediction')}\n"
             summary += "\n"
     return summary.strip()
 
@@ -95,67 +87,58 @@ def process_update(update):
     msg_text = msg['text'].strip()
     chat_id = msg['chat']['id']
 
-    user = msg.get('from', {})
-    user_id = user.get('id')
-    username = user.get('username', '')
-    first_name = user.get('first_name', 'کاربر')
+    # --- فیلتر: فقط دستورات /show یا /pred پردازش می‌شوند ---
+    is_show = msg_text.startswith("/show")
+    is_pred = msg_text.startswith("/pred")
+    
+    if not is_show and not is_pred:
+        return # ربات به پیام‌های عادی گروه پاسخ نمی‌دهد
 
-    # /show
-    if msg_text == "/show":
-        data = load_data()
-        send_message(chat_id, format_summary(data))
+    # پردازش /show
+    if is_show:
+        send_message(chat_id, format_summary(load_data()))
         return
 
-    # خطوط ورودی
-    lines = [line.strip() for line in msg_text.split('\n') if line.strip()]
+    # پردازش /pred (حذف کلمه /pred از اول متن برای رسیدن به خطوط اصلی)
+    content = msg_text.replace("/pred", "", 1).strip()
+    lines = [line.strip() for line in content.split('\n') if line.strip()]
+    
     if len(lines) < 2:
-        send_message(chat_id, "لطفاً در خط اول نام بازی و در خط‌های بعدی پیش‌بینی‌ها را بنویسید.")
+        send_message(chat_id, "⚠️ فرمت صحیح:\n/pred\nنام بازی\nپیش‌بینی")
         return
 
     match_input = lines[0]
-
-    matched_match = None
-    for m in MATCHES:
-        if match_any_order(match_input, m):
-            matched_match = m
-            break
+    matched_match = next((m for m in MATCHES if match_any_order(match_input, m)), None)
 
     if not matched_match:
+        send_message(chat_id, "❌ بازی مورد نظر پیدا نشد. لطفاً نام تیم‌ها را درست وارد کنید.")
         return
 
-    # بررسی زمان
     if jdatetime.datetime.now() > MATCHES[matched_match]:
-        send_message(chat_id, f"❌ متأسفم، زمان پیش‌بینی برای بازی {matched_match} تمام شده است.")
+        send_message(chat_id, f"❌ زمان پیش‌بینی برای {matched_match} تمام شده.")
         return
 
-    predictions = lines[1:]
-    if not predictions:
-        send_message(chat_id, "لطفاً در خط دوم پیش‌بینی خود را بنویسید.")
-        return
-
+    # ذخیره
+    user = msg.get('from', {})
     data = load_data()
-    if matched_match not in data:
-        data[matched_match] = []
-
-    for pred in predictions:
+    if matched_match not in data: data[matched_match] = []
+    
+    for pred in lines[1:]:
         data[matched_match].append({
-            "user_id": user_id,
-            "username": username,
-            "first_name": first_name,
+            "user_id": user.get('id'),
+            "username": user.get('username', ''),
+            "first_name": user.get('first_name', 'کاربر'),
             "prediction": pred
         })
-
+    
     save_data(data)
-
-    send_message(chat_id, f"✅ {len(predictions)} پیش‌بینی برای {matched_match} ثبت شد.\n\n{format_summary(data)}")
+    send_message(chat_id, f"✅ ثبت شد:\n\n{format_summary(data)}")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     update = request.get_json()
-    if update:
-        process_update(update)
+    if update: process_update(update)
     return 'ok', 200
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
